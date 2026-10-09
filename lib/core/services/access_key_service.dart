@@ -1,0 +1,13 @@
+import 'dart:math';
+
+abstract final class AccessKeyService {
+  static const _alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+  static String generate() {
+    final random = Random.secure();
+    return List.generate(
+      8,
+      (_) => _alphabet[random.nextInt(_alphabet.length)],
+    ).join();
+  }
+}

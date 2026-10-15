@@ -55,8 +55,8 @@ add_subdirectory("runner")
 
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
-# printing and pdfrx share pdfium.dll. Match pdfrx 1.3.5's bundled version
-# so installing the printing plugin cannot replace it with an older DLL.
+# Match pdfrx 1.3.5's PDFium version. The viewer loads a separately named
+# module below, since printing destroys its PDFium library after each job.
 set(PDFIUM_VERSION "7202" CACHE STRING "Shared PDFium version" FORCE)
 include(flutter/generated_plugins.cmake)
 
@@ -89,6 +89,17 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
 endif()
+
+# Keep viewer PDFium lifetime separate from printing's per-job init/destroy.
+foreach(BUNDLED_LIBRARY IN LISTS PLUGIN_BUNDLED_LIBRARIES)
+  get_filename_component(BUNDLED_LIBRARY_NAME "${BUNDLED_LIBRARY}" NAME)
+  if(BUNDLED_LIBRARY_NAME STREQUAL "pdfium.dll")
+    install(FILES "${BUNDLED_LIBRARY}"
+      DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+      RENAME "pdfium_viewer.dll"
+      COMPONENT Runtime)
+  endif()
+endforeach()
 
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")

@@ -1,3 +1,18 @@
+enum FileSearchMode {
+  exact('Exact match'),
+  contains('Contains'),
+  startsWith('Starts with'),
+  normalizedExact('Normalized exact'),
+  normalizedStart('Normalized start'),
+  trimSuffix('Trim suffix');
+
+  const FileSearchMode(this.label);
+  final String label;
+
+  static FileSearchMode fromStored(Object? value) =>
+      values.firstWhere((mode) => mode.name == value, orElse: () => exact);
+}
+
 class ListenerSettings {
   const ListenerSettings({
     required this.folders,
@@ -8,6 +23,8 @@ class ListenerSettings {
     this.openInApp = true,
     this.previewFullScreen = true,
     this.trimScanValue = true,
+    this.fileSearchMode = FileSearchMode.exact,
+    this.fileSearchOperator = '-',
   });
 
   final List<String> folders;
@@ -18,6 +35,8 @@ class ListenerSettings {
   final bool openInApp;
   final bool previewFullScreen;
   final bool trimScanValue;
+  final FileSearchMode fileSearchMode;
+  final String fileSearchOperator;
 
   ListenerSettings copyWith({
     bool? enabled,
@@ -25,6 +44,8 @@ class ListenerSettings {
     bool? openInApp,
     bool? previewFullScreen,
     bool? trimScanValue,
+    FileSearchMode? fileSearchMode,
+    String? fileSearchOperator,
   }) => ListenerSettings(
     folders: folders,
     port: port,
@@ -34,5 +55,7 @@ class ListenerSettings {
     openInApp: openInApp ?? this.openInApp,
     previewFullScreen: previewFullScreen ?? this.previewFullScreen,
     trimScanValue: trimScanValue ?? this.trimScanValue,
+    fileSearchMode: fileSearchMode ?? this.fileSearchMode,
+    fileSearchOperator: fileSearchOperator ?? this.fileSearchOperator,
   );
 }

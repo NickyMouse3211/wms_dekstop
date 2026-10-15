@@ -1,11 +1,17 @@
 Unicode True
 !include "MUI2.nsh"
+!ifndef APP_VERSION
+  !define APP_VERSION "1.0.0"
+!endif
 
 Name "WMS Windows Listener"
 OutFile "..\dist\WMSWindowsListenerSetup.exe"
 InstallDir "$LOCALAPPDATA\Programs\WMS Windows Listener"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
+
+!define MUI_ICON "..\windows\runner\resources\app_icon.ico"
+!define MUI_UNICON "..\windows\runner\resources\app_icon.ico"
 
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -23,7 +29,7 @@ Section "Install"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\WmsWindowsListener" "DisplayName" "WMS Windows Listener"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\WmsWindowsListener" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\WmsWindowsListener" "DisplayVersion" "1.0.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\WmsWindowsListener" "DisplayVersion" "${APP_VERSION}"
 SectionEnd
 
 Section "Uninstall"

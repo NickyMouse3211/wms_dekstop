@@ -87,6 +87,137 @@ class TestStorage extends StorageServices {
 
 void main() {
   test(
+    'search modes select files without extensions and suffix stops at the best match',
+    () async {
+      final temporary = await Directory.systemTemp.createTemp(
+        'wms-search-modes-',
+      );
+      final storage = TestStorage(File('${temporary.path}/config.json'));
+      final repository = ListenerRepository(
+        storage: storage,
+        historyStorage: TestHistory(File('${temporary.path}/history.json')),
+      );
+      final settings = ListenerSettings(
+        folders: [temporary.path],
+        port: 0,
+        key: 'test-key-12345678',
+      );
+      try {
+        for (final name in [
+          '3211-1305.pdf',
+          '3211.1305.pdf',
+          '32111305.pdf',
+          '3211-234241.pdf',
+          '32110-234241.pdf',
+          '13211-234241.pdf',
+          '321-15345.pdf',
+          '32 11543563.pdf',
+          '321113.pdf',
+          '32111305.png',
+          '3211130599.exe',
+        ]) {
+          await File('${temporary.path}/$name').writeAsString('sample');
+        }
+        Future<Set<String>> search(
+          FileSearchMode mode,
+          String query, {
+          String operator = '-',
+        }) async {
+          await repository.saveSettings(
+            settings.copyWith(
+              fileSearchMode: mode,
+              fileSearchOperator: operator,
+            ),
+          );
+          await repository.processCode(query);
+          return (await repository.loadHistory()).first.matches
+              .map((match) => match.name)
+              .toSet();
+        }
+
+        expect(await search(FileSearchMode.startsWith, '3211'), {
+          '3211-1305.pdf',
+          '3211-234241.pdf',
+        });
+        expect(await search(FileSearchMode.startsWith, '3211', operator: '.'), {
+          '3211.1305.pdf',
+        });
+        expect(await search(FileSearchMode.normalizedExact, '32111305'), {
+          '3211-1305.pdf',
+          '3211.1305.pdf',
+          '32111305.pdf',
+          '32111305.png',
+        });
+        expect(
+          await search(FileSearchMode.normalizedStart, '3211'),
+          containsAll(['321-15345.pdf', '32 11543563.pdf', '3211-234241.pdf']),
+        );
+        expect(await search(FileSearchMode.trimSuffix, '3211130599'), {
+          '32111305.pdf',
+          '32111305.png',
+        });
+        expect((await repository.loadHistory()).first.needsSelection, isTrue);
+        await File('${temporary.path}/3211130599.pdf').writeAsString('exact');
+        expect(await search(FileSearchMode.trimSuffix, '3211130599'), {
+          '3211130599.pdf',
+        });
+        expect(await search(FileSearchMode.trimSuffix, '999'), isEmpty);
+        await search(FileSearchMode.normalizedStart, '---');
+        expect((await repository.loadHistory()).first.status, 400);
+        await search(FileSearchMode.startsWith, '3211', operator: '');
+        expect((await repository.loadHistory()).first.status, 400);
+      } finally {
+        await repository.stop();
+        await temporary.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'operator typing is serialized and settings save retains search choices',
+    () async {
+      final repository = RecordingRepository(
+        const ListenerSettings(
+          folders: [],
+          port: 8765,
+          key: 'test-key-12345678',
+          enabled: false,
+        ),
+      );
+      final cubit = ListenerCubit(repository);
+      try {
+        await cubit.initialize();
+        expect(
+          await cubit.setFileSearchMode(FileSearchMode.startsWith),
+          isNull,
+        );
+        expect(
+          await Future.wait([
+            cubit.setFileSearchOperator(''),
+            cubit.setFileSearchOperator('-'),
+            cubit.setFileSearchOperator('--'),
+          ]),
+          everyElement(isNull),
+        );
+        expect(repository.saved.fileSearchOperator, '--');
+        expect(cubit.state.busy, isFalse);
+        expect(
+          await cubit.saveSettings(
+            folders: [],
+            port: '8766',
+            key: 'test-key-12345678',
+          ),
+          isNull,
+        );
+        expect(repository.saved.fileSearchMode, FileSearchMode.startsWith);
+        expect(repository.saved.fileSearchOperator, '--');
+      } finally {
+        await cubit.close();
+      }
+    },
+  );
+
+  test(
     'settings survive restart and migrate the original single folder',
     () async {
       final temporary = await Directory.systemTemp.createTemp('wms-settings-');
@@ -101,6 +232,7 @@ void main() {
         expect(initial.openInApp, isTrue);
         expect(initial.previewFullScreen, isTrue);
         expect(initial.trimScanValue, isTrue);
+        expect(initial.fileSearchMode, FileSearchMode.exact);
         expect(initial.key.length, 8);
         expect(RegExp(r'^[A-HJ-NP-Z2-9]{8}$').hasMatch(initial.key), isTrue);
         expect(
@@ -166,6 +298,24 @@ void main() {
         expect(migrated.openInApp, isTrue);
         expect(migrated.previewFullScreen, isTrue);
         expect(migrated.trimScanValue, isTrue);
+        expect(migrated.fileSearchMode, FileSearchMode.exact);
+        expect(migrated.fileSearchOperator, '-');
+        for (final mode in FileSearchMode.values) {
+          await storage.save(
+            migrated.copyWith(fileSearchMode: mode, fileSearchOperator: '--'),
+          );
+          expect((await TestStorage(storage.file).load()).fileSearchMode, mode);
+          expect(
+            (await TestStorage(storage.file).load()).fileSearchOperator,
+            '--',
+          );
+        }
+        final unknownMode =
+            jsonDecode(await storage.file.readAsString())
+                as Map<String, dynamic>;
+        unknownMode['fileSearchMode'] = 'unknown';
+        await storage.file.writeAsString(jsonEncode(unknownMode));
+        expect((await storage.load()).fileSearchMode, FileSearchMode.exact);
         await storage.file.writeAsString(
           jsonEncode({
             'folders': ['E:\\Legacy'],
@@ -400,6 +550,41 @@ void main() {
           '${child.path}${Platform.pathSeparator}ABC123.pdf',
         ).writeAsString('sample');
         expect(await send('ABC123'), 200);
+        expect(await send('ABC123.pdf'), 404);
+        expect(await send('ABC'), 404);
+        for (final mode in FileSearchMode.values.where(
+          (mode) => mode != FileSearchMode.startsWith,
+        )) {
+          await repository.saveSettings(
+            settings.copyWith(fileSearchMode: mode),
+          );
+          final query = switch (mode) {
+            FileSearchMode.exact => 'abc123',
+            FileSearchMode.contains => 'bc12',
+            FileSearchMode.startsWith => throw StateError('tested separately'),
+            FileSearchMode.normalizedExact => 'a-b.c123',
+            FileSearchMode.normalizedStart => 'a-b.c',
+            FileSearchMode.trimSuffix => 'abc12399',
+          };
+          expect(await send(query), 200, reason: mode.name);
+          expect(
+            await send('pdf'),
+            404,
+            reason: '${mode.name} ignores extension',
+          );
+          if (mode != FileSearchMode.trimSuffix) {
+            expect(await send('ABC123.pdf'), 404);
+          }
+        }
+        await repository.saveSettings(
+          settings.copyWith(fileSearchMode: FileSearchMode.startsWith),
+        );
+        expect(await send('123'), 404);
+        await repository.saveSettings(
+          settings.copyWith(fileSearchMode: FileSearchMode.exact),
+        );
+        expect(await send('ABC'), 404);
+        await repository.saveSettings(settings);
         expect(await send('  ABC123  '), 200);
         expect(await send('\u00A0ABC123\u200B  '), 200);
         await repository.saveSettings(settings.copyWith(trimScanValue: false));
@@ -418,6 +603,18 @@ void main() {
         final history = await repository.loadHistory();
         expect(history.first.matches.length, 2);
         expect(history.first.needsSelection, isTrue);
+        // Periodic Mobile authorization probes must not replace the pending
+        // two-file choice or create extra history entries.
+        for (final blank in ['', '  ', '\u00A0\u200B']) {
+          expect(await send(blank), 400);
+          final afterProbe = await repository.loadHistory();
+          expect(afterProbe.length, history.length);
+          expect(afterProbe.first.id, history.first.id);
+          expect(afterProbe.first.code, 'ABC123');
+          expect(afterProbe.first.matches.length, 2);
+          expect(afterProbe.first.needsSelection, isTrue);
+        }
+        expect(await send('', authorized: false), 401);
         expect(
           (await repository.openMatch(
             history.first.id,
@@ -426,6 +623,13 @@ void main() {
           200,
         );
         expect((await repository.loadHistory()).first.openedPath, isNotNull);
+        final opened = (await repository.loadHistory()).first;
+        expect(await send(''), 400);
+        expect((await repository.loadHistory()).first.id, opened.id);
+        expect(
+          (await repository.loadHistory()).first.openedPath,
+          opened.openedPath,
+        );
       } finally {
         client.close(force: true);
         await repository.stop();

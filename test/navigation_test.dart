@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -239,6 +240,42 @@ void main() {
     expect(find.text('Buka di aplikasi'), findsOneWidget);
     expect(find.text('Full screen'), findsOneWidget);
     expect(find.text('Trim nilai scan'), findsOneWidget);
+    expect(find.text('Exact match'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<FileSearchMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Contains').last);
+    await tester.pumpAndSettle();
+    expect(repository.saved.fileSearchMode, FileSearchMode.contains);
+    await tester.tap(find.byType(DropdownButtonFormField<FileSearchMode>));
+    await tester.pumpAndSettle();
+    for (final mode in FileSearchMode.values) {
+      expect(find.text(mode.label), findsWidgets);
+    }
+    expect(find.text('Ends with'), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Starts with').last));
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Isi Operator dengan pemisah nama file'),
+      findsOneWidget,
+    );
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Starts with').last);
+    await tester.pumpAndSettle();
+    final operatorField = find.byKey(const ValueKey('file-search-operator'));
+    expect(operatorField, findsOneWidget);
+    expect(tester.widget<TextField>(operatorField).controller!.text, '-');
+    await tester.enterText(operatorField, '--');
+    await tester.pumpAndSettle();
+    expect(repository.saved.fileSearchOperator, '--');
+    await tester.tap(find.byType(DropdownButtonFormField<FileSearchMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Contains').last);
+    await tester.pumpAndSettle();
+    expect(operatorField, findsNothing);
     expect(
       tester
           .widget<SwitchListTile>(
@@ -257,6 +294,7 @@ void main() {
     await tester.tap(find.text('Buka di aplikasi'));
     await tester.pumpAndSettle();
     expect(find.text('Full screen'), findsOneWidget);
+    await tester.ensureVisible(find.text('Full screen'));
     await tester.tap(find.text('Full screen'));
     await tester.pumpAndSettle();
     expect(repository.saved.previewFullScreen, isFalse);
@@ -383,6 +421,22 @@ void main() {
     expect(find.text('Pilih file yang ingin dibuka:'), findsOneWidget);
     expect(find.byType(FilePreviewView), findsNothing);
     expect(previews.closed, 1);
+    final scrollView = find.byType(SingleChildScrollView).first;
+    final scrollPosition = tester.getCenter(scrollView);
+    for (final delta in [const Offset(0, 500), const Offset(0, -500)]) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: scrollPosition,
+          scrollDelta: delta,
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(cubit.state.history.first.id, 'multiple');
+      expect(cubit.state.history.first.matches, hasLength(2));
+      expect(find.text('(kode kosong)'), findsNothing);
+      expect(find.text('Pilih file yang ingin dibuka:'), findsOneWidget);
+    }
   });
 
   testWidgets('desktop and narrow navigation show saved folders', (

@@ -28,6 +28,9 @@ if (-not $compiler) {
 }
 if (-not (Test-Path -LiteralPath $compiler)) { throw 'makensis.exe tidak ditemukan. Unduh NSIS lalu lihat README.md.' }
 New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot 'dist') | Out-Null
-& $compiler 'installer\wms_windows_listener.nsi'
+$versionLine = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'pubspec.yaml') | Where-Object { $_ -match '^version:' }
+if ($versionLine -notmatch '^version:\s*(\d+\.\d+\.\d+)\+(\d+)\s*$') { throw 'Invalid version in pubspec.yaml.' }
+$appVersion = $Matches[1]
+& $compiler "/DAPP_VERSION=$appVersion" 'installer\wms_windows_listener.nsi'
 if ($LASTEXITCODE -ne 0) { throw 'Pembuatan installer gagal' }
 Write-Host "Installer siap: $PSScriptRoot\dist\WMSWindowsListenerSetup.exe"

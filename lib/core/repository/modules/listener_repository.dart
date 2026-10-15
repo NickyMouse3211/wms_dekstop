@@ -12,6 +12,7 @@ import '../../services/network_services.dart';
 import '../../services/scan_history_services.dart';
 import '../../services/storage_services.dart';
 import '../../utils/listener_validators.dart';
+import '../../utils/file_search_matcher.dart';
 
 class ListenerRepository {
   ListenerRepository({
@@ -72,6 +73,14 @@ class ListenerRepository {
   Future<void> stop() => _server.stop();
 
   Future<ScanResult> processCode(String input) async {
+    // Mobile sends an empty scan to verify its access key during connection
+    // polling. Reject it without replacing the latest result or open preview.
+    if (ListenerValidators.trimScanValue(input).isEmpty) {
+      return const ScanResult(
+        400,
+        'Kode QR harus berupa nama file tanpa alamat folder',
+      );
+    }
     if (_processing) {
       return const ScanResult(409, 'Scan sebelumnya masih diproses');
     }
@@ -97,10 +106,19 @@ class ListenerRepository {
         );
       }
 
+      final matcher = FileSearchMatcher(
+        mode: settings.fileSearchMode,
+        query: code,
+        operator: settings.fileSearchOperator,
+      );
+      final validationError = matcher.validationError;
+      if (validationError != null) {
+        return await _record(code, ScanResult(400, validationError));
+      }
       final matches = <ScanFileMatch>[];
+      var bestScore = 0;
       final seenPaths = <String>{};
       var availableFolders = 0;
-      final searched = code.toLowerCase();
       for (final folder in settings.folders) {
         final directory = Directory(folder);
         if (!await directory.exists()) continue;
@@ -121,8 +139,10 @@ class ListenerRepository {
               )) {
             continue;
           }
-          if (lowerName == searched ||
-              lowerName.substring(0, dot) == searched) {
+          final score = matcher.score(lowerName.substring(0, dot));
+          if (score > 0 && score >= bestScore) {
+            if (score > bestScore) matches.clear();
+            bestScore = score;
             matches.add(ScanFileMatch(name: name, path: path));
           }
         }

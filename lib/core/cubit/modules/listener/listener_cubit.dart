@@ -10,6 +10,8 @@ class ListenerCubit extends Cubit<ListenerState> {
   ListenerCubit(this._repository) : super(const ListenerState());
 
   final ListenerRepository _repository;
+  Future<void> _operatorWrites = Future<void>.value();
+  int _pendingOperatorWrites = 0;
 
   Future<void> initialize() async {
     try {
@@ -64,6 +66,8 @@ class ListenerCubit extends Cubit<ListenerState> {
       openInApp: state.settings?.openInApp ?? true,
       previewFullScreen: state.settings?.previewFullScreen ?? true,
       trimScanValue: state.settings?.trimScanValue ?? true,
+      fileSearchMode: state.settings?.fileSearchMode ?? FileSearchMode.exact,
+      fileSearchOperator: state.settings?.fileSearchOperator ?? '-',
     );
     emit(state.copyWith(busy: true));
     try {
@@ -167,7 +171,24 @@ class ListenerCubit extends Cubit<ListenerState> {
     }
   }
 
+  Future<String?> setFileSearchMode(FileSearchMode value) async {
+    final current = state.settings;
+    if (current == null || state.busy) return 'Pengaturan belum siap';
+    final updated = current.copyWith(fileSearchMode: value);
+    emit(state.copyWith(busy: true));
+    try {
+      await _repository.saveSettings(updated);
+      emit(state.copyWith(settings: updated));
+      return null;
+    } catch (error) {
+      return 'Gagal menyimpan pilihan pencarian: $error';
+    } finally {
+      emit(state.copyWith(busy: false));
+    }
+  }
+
   Future<ScanResult> tryCode(String code) async {
+    if (_pendingOperatorWrites > 0) await _operatorWrites;
     if (!state.active) return const ScanResult(503, 'Listener belum aktif');
     emit(state.copyWith(busy: true));
     try {
@@ -175,6 +196,35 @@ class ListenerCubit extends Cubit<ListenerState> {
     } finally {
       emit(state.copyWith(busy: false));
     }
+  }
+
+  Future<String?> setFileSearchOperator(String value) async {
+    if (state.settings == null) return 'Pengaturan belum siap';
+    if (state.busy && _pendingOperatorWrites == 0) {
+      return 'Tunggu proses saat ini selesai sebelum mengganti operator.';
+    }
+    // Keep typing responsive while serializing every edit to local storage.
+    // Other settings/search controls remain disabled until the queue is saved.
+    _pendingOperatorWrites++;
+    emit(state.copyWith(busy: true));
+    String? error;
+    final write = _operatorWrites.then((_) async {
+      if (isClosed) return;
+      try {
+        final updated = state.settings!.copyWith(fileSearchOperator: value);
+        await _repository.saveSettings(updated);
+        if (!isClosed) emit(state.copyWith(settings: updated));
+      } catch (failure) {
+        error = 'Gagal menyimpan operator pencarian: $failure';
+      }
+    });
+    _operatorWrites = write;
+    await write;
+    _pendingOperatorWrites--;
+    if (!isClosed && _pendingOperatorWrites == 0) {
+      emit(state.copyWith(busy: false));
+    }
+    return error;
   }
 
   Future<ScanResult> openMatch(String entryId, String path) async {
@@ -240,6 +290,7 @@ class ListenerCubit extends Cubit<ListenerState> {
 
   @override
   Future<void> close() async {
+    if (_pendingOperatorWrites > 0) await _operatorWrites;
     await _repository.stop();
     return super.close();
   }

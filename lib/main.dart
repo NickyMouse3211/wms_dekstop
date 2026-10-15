@@ -18,7 +18,7 @@ import 'presentation/pages/preview/preview_window_app.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   Pdfrx.pdfiumModulePath = File(
-    '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}pdfium.dll',
+    '${File(Platform.resolvedExecutable).parent.path}${Platform.pathSeparator}pdfium_viewer.dll',
   ).path;
   final currentWindow = await WindowController.fromCurrentEngine();
   Map<String, dynamic>? arguments;

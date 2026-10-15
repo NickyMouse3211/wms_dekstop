@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/wms_theme.dart';
 import '../../../../core/cubit/modules/listener/listener_state.dart';
 import '../../../../core/models/modules/listener/scan_history_entry.dart';
+import '../../../../core/models/modules/listener/listener_settings.dart';
 import '../../../components/section_card.dart';
 
 class FileScanView extends StatelessWidget {
@@ -16,6 +17,8 @@ class FileScanView extends StatelessWidget {
     required this.onOpenInAppChanged,
     required this.onPreviewFullScreenChanged,
     required this.onTrimScanValueChanged,
+    required this.onFileSearchModeChanged,
+    required this.onFileSearchOperatorChanged,
   });
 
   final ListenerState state;
@@ -26,6 +29,61 @@ class FileScanView extends StatelessWidget {
   final ValueChanged<bool> onOpenInAppChanged;
   final ValueChanged<bool> onPreviewFullScreenChanged;
   final ValueChanged<bool> onTrimScanValueChanged;
+  final ValueChanged<FileSearchMode> onFileSearchModeChanged;
+  final Future<String?> Function(String) onFileSearchOperatorChanged;
+
+  Widget _modeLabel(FileSearchMode mode) {
+    final (color, speed) = switch (mode) {
+      FileSearchMode.exact => (Colors.green, 'Paling cepat'),
+      FileSearchMode.contains => (Colors.lightGreen, 'Cepat'),
+      FileSearchMode.startsWith => (Colors.lime.shade700, 'Cepat–sedang'),
+      FileSearchMode.normalizedExact => (Colors.orange, 'Lebih lambat'),
+      FileSearchMode.normalizedStart => (Colors.red, 'Paling lambat'),
+      FileSearchMode.trimSuffix => (Colors.amber.shade700, 'Sedang'),
+    };
+    final note = switch (mode) {
+      FileSearchMode.exact =>
+        'Cari nama yang sama persis dengan input Anda, tanpa ekstensi.\n'
+            'Contoh: 3211 menemukan 3211.pdf, bukan 3211-1305.pdf.',
+      FileSearchMode.contains =>
+        'Cari teks Anda di bagian mana pun dalam nama file.\n'
+            'Contoh: 3211 menemukan ABC3211.pdf dan 3211-1305.pdf.',
+      FileSearchMode.startsWith =>
+        'Isi Operator dengan pemisah nama file, misalnya -.\n'
+            'Input harus sama persis dengan bagian sebelum pemisah pertama.\n'
+            'Contoh: 3211 dengan - menemukan 3211-234241.pdf, '
+            'bukan 13211-234241.pdf atau 32110-234241.pdf.',
+      FileSearchMode.normalizedExact =>
+        'Cari nama yang sama setelah tanda pemisah seperti spasi, - dan . diabaikan.\n'
+            'Contoh: 32111305 menemukan 3211-1305.pdf, 3211.1305.pdf dan 32111305.pdf.',
+      FileSearchMode.normalizedStart =>
+        'Cari nama yang diawali input Anda setelah tanda pemisah diabaikan.\n'
+            'Contoh: 3211 menemukan 3211-123421.pdf, 321-15345.pdf dan 32 11543563.pdf.',
+      FileSearchMode.trimSuffix =>
+        'Cari nama yang sama persis terlebih dahulu. Jika tidak ada, hapus '
+            'karakter terakhir input satu per satu sampai ada hasil.\n'
+            'Contoh: 321113051 dapat menemukan 32111305.pdf. '
+            'Pencarian berhenti pada hasil pertama yang ditemukan; input tidak dikosongkan.',
+    };
+    return Tooltip(
+      message:
+          '$note\nSemua pilihan mengabaikan huruf besar/kecil dan ekstensi file.\nEstimasi kecepatan: $speed.',
+      waitDuration: const Duration(milliseconds: 400),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.circle,
+            size: 10,
+            color: color,
+            semanticLabel: 'Estimasi: $speed',
+          ),
+          const SizedBox(width: 8),
+          Text(mode.label),
+        ],
+      ),
+    );
+  }
 
   String _time(DateTime date) {
     final local = date.toLocal();
@@ -94,6 +152,72 @@ class FileScanView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<FileSearchMode>(
+                      key: ValueKey((
+                        state.settings?.fileSearchMode,
+                        state.busy,
+                      )),
+                      initialValue:
+                          state.settings?.fileSearchMode ??
+                          FileSearchMode.exact,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Metode pencarian',
+                      ),
+                      items: [
+                        for (final mode in FileSearchMode.values)
+                          DropdownMenuItem(
+                            value: mode,
+                            child: _modeLabel(mode),
+                          ),
+                      ],
+                      onChanged: state.settings == null || state.busy
+                          ? null
+                          : (value) {
+                              if (value != null) onFileSearchModeChanged(value);
+                            },
+                    ),
+                  ),
+                  if (state.settings?.fileSearchMode ==
+                      FileSearchMode.startsWith) ...[
+                    const SizedBox(width: 12),
+                    SizedBox(
+                      width: 110,
+                      child: _SearchOperatorField(
+                        value: state.settings!.fileSearchOperator,
+                        onChanged: onFileSearchOperatorChanged,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(switch (state.settings?.fileSearchMode ??
+                  FileSearchMode.exact) {
+                FileSearchMode.exact =>
+                  'Nama harus sama persis tanpa ekstensi.',
+                FileSearchMode.contains =>
+                  'Nama mengandung teks yang dicari (tidak peka huruf besar/kecil).',
+                FileSearchMode.startsWith =>
+                  'Segmen pertama sebelum operator harus sama persis dengan input.',
+                FileSearchMode.normalizedExact =>
+                  'Abaikan pemisah; seluruh huruf dan angka harus sama.',
+                FileSearchMode.normalizedStart =>
+                  'Abaikan pemisah; huruf dan angka diawali input.',
+                FileSearchMode.trimSuffix =>
+                  'Cari exact, lalu hapus karakter akhir input satu per satu sampai ditemukan.',
+              }, style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 4),
+              Text(
+                'Tanpa ekstensi • PC dan Mobile • Tersimpan otomatis\n'
+                'Estimasi kecepatan: hijau tercepat → merah paling lambat.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: codeController,
                 decoration: const InputDecoration(
@@ -256,4 +380,45 @@ class FileScanView extends StatelessWidget {
       ],
     );
   }
+}
+
+class _SearchOperatorField extends StatefulWidget {
+  const _SearchOperatorField({required this.value, required this.onChanged});
+  final String value;
+  final Future<String?> Function(String) onChanged;
+
+  @override
+  State<_SearchOperatorField> createState() => _SearchOperatorFieldState();
+}
+
+class _SearchOperatorFieldState extends State<_SearchOperatorField> {
+  late final _controller = TextEditingController(text: widget.value);
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    key: const ValueKey('file-search-operator'),
+    controller: _controller,
+    decoration: InputDecoration(
+      labelText: 'Operator',
+      hintText: '-',
+      errorText: _error ?? (_controller.text.isEmpty ? 'Wajib diisi' : null),
+      errorMaxLines: 3,
+    ),
+    onChanged: (value) async {
+      setState(() => _error = null);
+      final error = await widget.onChanged(value);
+      if (!mounted || _controller.text != value) return;
+      setState(() {
+        _error = error;
+        if (error != null) _controller.text = widget.value;
+      });
+    },
+  );
 }

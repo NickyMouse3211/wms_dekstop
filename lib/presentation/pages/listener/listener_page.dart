@@ -207,6 +207,15 @@ class _ListenerPageState extends State<ListenerPage> {
       onOpenInAppChanged: toggleOpenInApp,
       onPreviewFullScreenChanged: togglePreviewFullScreen,
       onTrimScanValueChanged: toggleTrimScanValue,
+      onFileSearchOperatorChanged: context
+          .read<ListenerCubit>()
+          .setFileSearchOperator,
+      onFileSearchModeChanged: (value) async {
+        final error = await context.read<ListenerCubit>().setFileSearchMode(
+          value,
+        );
+        if (error != null && mounted) showMessage(error);
+      },
     ),
     3 => const PrintLabelView(),
     _ => SettingsView(
@@ -305,6 +314,10 @@ class _ListenerPageState extends State<ListenerPage> {
                               const SizedBox(height: 2),
                               Text(
                                 subtitles[selectedIndex],
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                              Text(
+                                ListenerConstants.appVersionLabel,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],

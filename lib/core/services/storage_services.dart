@@ -43,6 +43,8 @@ class StorageServices {
       openInApp: data['openInApp'] as bool? ?? true,
       previewFullScreen: data['previewFullScreen'] as bool? ?? true,
       trimScanValue: data['trimScanValue'] as bool? ?? true,
+      fileSearchMode: FileSearchMode.fromStored(data['fileSearchMode']),
+      fileSearchOperator: data['fileSearchOperator'] as String? ?? '-',
     );
   }
 
@@ -59,6 +61,8 @@ class StorageServices {
         'openInApp': settings.openInApp,
         'previewFullScreen': settings.previewFullScreen,
         'trimScanValue': settings.trimScanValue,
+        'fileSearchMode': settings.fileSearchMode.name,
+        'fileSearchOperator': settings.fileSearchOperator,
       }),
     );
   }
